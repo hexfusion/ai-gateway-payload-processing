@@ -1,97 +1,105 @@
-# Design: Multi-Provider API Passthrough for External Model Serving
+# Design: Multi-API Passthrough for External Model Serving
 
 ## Status
 
 Draft — June 2026
 
-## Authors
+## Author
 
 Inference Gateway Team
 
 ## Problem Statement
 
-Today, the Inference Payload Processor (IPP) assumes all client requests arrive in OpenAI `/v1/chat/completions` format. When the upstream provider also speaks a different format (e.g., Anthropic `/v1/messages`), the `api-translation` plugin translates the request from OpenAI → provider-native and the response from provider-native → OpenAI.
+The IPP assumes all client requests arrive in OpenAI `/v1/chat/completions` format. The `api-translation` plugin translates to the upstream provider's format and back. This breaks when clients speak their provider's native format directly — translation strips provider-specific features (prompt caching, extended thinking, beta flags) that have no equivalent in the canonical format.
 
-This works when the **client** always speaks OpenAI. But increasingly, clients speak their provider's native format directly:
-
-- **Claude Code** (Anthropic's CLI) sends requests in Anthropic Messages format (`/v1/messages`)
-- **OpenAI Codex** sends requests in OpenAI Responses format (`/v1/responses`)
-- **aider** with Gemini sends requests in Google's format
-
-When a client already speaks the same format as the upstream provider, translation is unnecessary and harmful — it can strip provider-specific fields (e.g., `anthropic-beta` headers, caching directives, extended thinking parameters) that have no OpenAI equivalent.
+The design should support **any** API format, not just text inference. Embeddings, audio, images, and future APIs should all be passthrough-capable without code changes to the passthrough logic.
 
 ## Proposed Solution
 
-### Passthrough Mode
+### Input/Output API Format Matching
 
-Add the ability for the IPP to detect the incoming client API format from the request path and compare it with the upstream provider's API format (declared in the `ExternalProviderRef.apiFormat` field). When they match, the request and response flow through untouched — no translation.
+The IPP detects the **input API format** from the request path and compares it to the **output API format** declared on the ExternalModel CR. When they match, both request and response translation are skipped.
 
 ```
-Client (Anthropic format) → IPP detects "/v1/messages" → incoming = "anthropic"
-                           → ExternalModel.apiFormat = "anthropic" → MATCH → passthrough
-                           → request body flows to upstream unchanged
-                           → response body flows to client unchanged
+Client (Anthropic) → /v1/messages    → input = "messages"
+                                       output = "messages" (from ExternalModel.apiFormat)
+                                       MATCH → passthrough (no translation)
 
-Client (OpenAI format)    → IPP detects "/v1/chat/completions" → incoming = "openai"
-                           → ExternalModel.apiFormat = "anthropic" → MISMATCH → translate
-                           → api-translation converts OpenAI → Anthropic (existing behavior)
+Client (OpenAI)    → /v1/chat/completions → input = "openai-chat"
+                                            output = "messages" (Anthropic upstream)
+                                            MISMATCH → translate (existing behavior)
 ```
 
 ### Format Detection
 
-The incoming client format is detected from the request path suffix:
+The input format is detected from the request path suffix. This mapping is generic — adding new API formats requires only a new entry here:
 
-| Path suffix | Detected format |
-|-------------|----------------|
-| `/v1/chat/completions` | `openai` |
-| `/v1/messages` | `anthropic` |
-| `/v1/responses` | `openai-responses` |
+| Path suffix | Detected format | API |
+|-------------|----------------|-----|
+| `/v1/chat/completions` | `openai-chat` | OpenAI Chat Completions |
+| `/v1/messages` | `messages` | Anthropic Messages |
+| `/v1/responses` | `openai-responses` | OpenAI Responses |
+| `/v1/embeddings` | `embeddings` | Embeddings (any provider) |
 
-This is deterministic and requires no configuration — the path uniquely identifies the API contract.
+The output format comes from `ExternalProviderRef.apiFormat` on the ExternalModel CR, or is derived from the legacy provider name:
+
+| Legacy provider | Output format |
+|----------------|---------------|
+| `anthropic` | `messages` |
+| `openai` | `openai-chat` |
+| `azure-openai` | `openai-chat` |
+| `bedrock-openai` | `openai-chat` |
+| `vertex-openai` | `openai-chat` |
 
 ### CycleState Flow
 
-The model-provider-resolver plugin writes two new keys to CycleState:
+The model-provider-resolver writes two keys to CycleState:
 
-- `incoming-api-format` — detected from request path (e.g., `"anthropic"`)
-- `api-format` — from `ExternalProviderRef.apiFormat` on the ExternalModel CR (e.g., `"anthropic"`)
+- `input-api-format` — detected from request path (e.g., `"messages"`)
+- `output-api-format` — from ExternalModel's apiFormat (e.g., `"messages"`)
 
-The api-translation plugin reads both keys. If they match, it returns early (passthrough). If they differ, it translates as before.
+The api-translation plugin reads both. If they match, both request AND response translation are skipped.
 
-### Data Model
+### Decision Flow
 
-**No CRD schema changes required.** The existing `ExternalProviderRef.apiFormat` field (added in RHAISTRAT-1720) already declares the upstream format. The incoming format is auto-detected from the request path.
+```mermaid
+flowchart TD
+    A["Request arrives at IPP"] --> B{"Detect input format\nfrom request path"}
+    B -->|"/v1/chat/completions"| C["input = openai-chat"]
+    B -->|"/v1/messages"| D["input = messages"]
+    B -->|"/v1/responses"| E["input = openai-responses"]
+    B -->|"/v1/embeddings"| F["input = embeddings"]
+    B -->|unknown| G["Reject: unsupported path"]
 
-The `externalModelInfo` struct in the IPP's in-memory store gains one field:
+    C --> H{"input == output?"}
+    D --> H
+    E --> H
+    F --> H
 
-```go
-type externalModelInfo struct {
-    provider        string
-    targetModel     string
-    apiFormat       string  // NEW — from ExternalProviderRef.apiFormat
-    secretName      string
-    secretNamespace string
-}
+    H -->|Yes| I["PASSTHROUGH\nSkip request translation\nSkip response translation\nBody flows unchanged"]
+    H -->|No| J["TRANSLATE\napi-translation converts\nrequest AND response"]
+
+    style I fill:#1a3a1a,stroke:#3fb950,color:#3fb950
+    style J fill:#3a2a1a,stroke:#d29922,color:#d29922
+    style G fill:#3a1a1a,stroke:#f85149,color:#f85149
 ```
 
-## Architecture
-
-### Passthrough Flow (formats match — no translation)
+### Passthrough Flow (input format matches output format)
 
 ```mermaid
 flowchart LR
     subgraph Client
-        CC["Claude Code\n/v1/messages\n(Anthropic format)"]
+        CC["Claude Code\n/v1/messages"]
     end
 
     subgraph IPP["Inference Payload Processor"]
-        MPR["model-provider-resolver\nincoming = anthropic\napiFormat = anthropic\n→ PASSTHROUGH"]
+        MPR["model-provider-resolver\ninput = messages\noutput = messages\n→ PASSTHROUGH"]
         AT["api-translation\nformats match → SKIP"]
-        AKI["apikey-injection\nMaaS key → real key"]
+        AKI["apikey-injection"]
         MPR --> AT --> AKI
     end
 
-    subgraph Provider["Upstream Provider"]
+    subgraph Provider["Upstream"]
         API["api.anthropic.com\n/v1/messages"]
     end
 
@@ -99,45 +107,27 @@ flowchart LR
     AKI --> API
 ```
 
-### Translation Flow (formats differ — translate as before)
+### Translation Flow (input format differs from output format)
 
 ```mermaid
 flowchart LR
     subgraph Client
-        SDK["OpenAI SDK\n/v1/chat/completions\n(OpenAI format)"]
+        SDK["OpenAI SDK\n/v1/chat/completions"]
     end
 
     subgraph IPP["Inference Payload Processor"]
-        MPR["model-provider-resolver\nincoming = openai\napiFormat = anthropic\n→ TRANSLATE"]
-        AT["api-translation\nOpenAI → Anthropic"]
-        AKI["apikey-injection\nMaaS key → real key"]
+        MPR["model-provider-resolver\ninput = openai-chat\noutput = messages\n→ TRANSLATE"]
+        AT["api-translation\nOpenAI → Anthropic\n(request + response)"]
+        AKI["apikey-injection"]
         MPR --> AT --> AKI
     end
 
-    subgraph Provider["Upstream Provider"]
+    subgraph Provider["Upstream"]
         API["api.anthropic.com\n/v1/messages"]
     end
 
     SDK --> MPR
     AKI --> API
-```
-
-### Decision Flow
-
-```mermaid
-flowchart TD
-    A["Request arrives at IPP"] --> B{"Parse request path"}
-    B -->|"/v1/chat/completions"| C["incoming = openai"]
-    B -->|"/v1/messages"| D["incoming = anthropic"]
-    B -->|"/v1/responses"| E["incoming = openai-responses"]
-    B -->|other| F["Reject: unsupported path"]
-
-    C --> G{"incoming == apiFormat?"}
-    D --> G
-    E --> G
-
-    G -->|Yes| H["PASSTHROUGH\nSkip api-translation\nBody flows unchanged"]
-    G -->|No| I["TRANSLATE\napi-translation converts\nrequest and response"]
 ```
 
 ## Changes Required
@@ -146,47 +136,52 @@ flowchart TD
 
 | Component | Change |
 |-----------|--------|
-| `pkg/plugins/common/state/state-keys.go` | Add `APIFormatKey` and `IncomingAPIFormatKey` constants |
+| `pkg/plugins/common/state/state-keys.go` | Add `InputAPIFormatKey` and `OutputAPIFormatKey` |
 | `pkg/plugins/model-provider-resolver/store.go` | Add `apiFormat` field to `externalModelInfo` |
-| `pkg/plugins/model-provider-resolver/external_model_reconciler.go` | Populate `apiFormat` from CRD (legacy: defaults to provider name) |
-| `pkg/plugins/model-provider-resolver/plugin.go` | Detect incoming format from path, accept `/v1/messages` and `/v1/responses`, write both format keys to CycleState |
-| `pkg/plugins/api-translation/plugin.go` | Skip translation when `incomingFormat == apiFormat` |
+| `pkg/plugins/model-provider-resolver/external_model_reconciler.go` | Populate `apiFormat` — legacy CRDs: derive from provider name via `providerToAPIFormat()`. New CRDs: read from `ExternalProviderRef.apiFormat` |
+| `pkg/plugins/model-provider-resolver/plugin.go` | Detect input format from path via `detectInputAPIFormat()`, accept `/v1/messages`, `/v1/responses`, `/v1/embeddings`. Write both format keys to CycleState |
+| `pkg/plugins/api-translation/plugin.go` | Extract `isPassthrough()` helper. Skip both request AND response translation when input format matches output format |
 
 ### MaaS (models-as-a-service) — Required for Production
 
 | Component | Change | Why |
 |-----------|--------|-----|
-| MaaS AuthPolicy template | Add `api-keys-via-xapikey` authentication method | Claude Code sends API key in `x-api-key` header (Anthropic SDK convention), not `Authorization: Bearer` |
-| MaaS AuthPolicy template | Update `apiKeyValidation` expression to extract from `x-api-key` | Key validation must check both header locations |
-| MaaS HTTPRoute generation | Add `URLRewrite` filter with `ReplacePrefixMatch: /` | Provider APIs must receive clean paths (`/v1/messages`), not MaaS-prefixed paths (`/llm/model-name/v1/messages`) |
+| MaaS AuthPolicy template | Support configurable auth header names | Claude Code sends key in `x-api-key` header. Current AuthPolicy only supports `Authorization: Bearer`. Should be generalized to support any header name per provider, not just Anthropic's `x-api-key` |
+| MaaS HTTPRoute generation | Add URLRewrite filter with `ReplacePrefixMatch: /` | Provider APIs must receive clean paths, not MaaS-prefixed paths |
 
-Until these MaaS changes ship, passthrough requires manual AuthConfig patches and operators scaled to 0 to prevent reconciliation overwrite.
+### BBR Framework (llm-d-inference-payload-processor)
 
-### BBR Framework (llm-d-inference-payload-processor) — Upstream PR
-
-| Component | Change | Why |
-|-----------|--------|-----|
-| `pkg/handlers/response.go` | Parse SSE streaming responses | Extract usage data from Anthropic `message_delta` and OpenAI `response.completed` SSE events |
-| `pkg/handlers/server.go` | Acknowledge non-EoS response body chunks | Envoy blocks on unacknowledged chunks in streaming mode |
+| Component | Change |
+|-----------|--------|
+| `pkg/handlers/response.go` | Parse SSE streaming responses for usage extraction |
+| `pkg/handlers/server.go` | Acknowledge non-EoS response body chunks in streaming mode |
 
 Tracked in upstream PR #138.
 
+## Extensibility
+
+Adding support for new API formats (embeddings, audio, images, conversations) requires:
+
+1. **One line** in `detectInputAPIFormat()` — map the path suffix to a format name
+2. **No changes** to `isPassthrough()` — the format matching is generic
+3. **No changes** to `api-translation` — passthrough works for any format pair
+
+This means the gateway can support any API that a provider exposes, as long as the client and upstream speak the same format.
+
 ## Backward Compatibility
 
-- **Fully backward compatible.** Existing OpenAI-only deployments are unaffected.
-- If `IncomingAPIFormatKey` is not set in CycleState (e.g., older model-provider-resolver version), api-translation behaves exactly as before.
-- The `apiFormat` field defaults to the provider name for legacy `maas.opendatahub.io` CRDs, which is the existing behavior.
+- Fully backward compatible. Existing OpenAI-only deployments are unaffected.
+- If `InputAPIFormatKey` is not set in CycleState, api-translation behaves exactly as before.
+- Model mismatch validation is preserved — request body `model` must match `ExternalModel.targetModel`.
 
-## Testing
+## OpenAI Chat Exclusion
 
-1. **Unit tests** — format detection function, passthrough skip logic, CycleState propagation
-2. **Integration tests** — Anthropic passthrough (client=anthropic, upstream=anthropic → no translation), OpenAI Responses passthrough, mixed mode (client=openai, upstream=anthropic → translation activates)
-3. **E2E** — Deploy with both api-translation and model-provider-resolver plugins, send Claude Code requests to Anthropic ExternalModel, verify response is native Anthropic format (not translated to OpenAI)
+The `openai-chat` format is excluded from passthrough even when input and output match. This is because the OpenAI translator performs essential `:path` rewriting — it strips the model prefix path (e.g., `/llm/model/v1/chat/completions` → `/v1/chat/completions`) which is needed for the upstream provider to receive a clean path. For non-OpenAI formats, path rewriting is handled by the HTTPRoute URLRewrite filter.
 
 ## Out of Scope
 
-- Model override / targetModel rewriting (tracked separately)
-- Parameter stripping for cross-model compatibility (tracked separately)
+- Model override / transparent model swapping (separate feature)
+- Parameter normalization across model tiers (separate feature)
 - External metering / usage tracking (separate PR)
-- Request/response format translation for new providers (existing api-translation scope)
+- New provider translation plugins (api-translation scope)
 - Unified entry point / body-based routing (RHAISTRAT-1540)

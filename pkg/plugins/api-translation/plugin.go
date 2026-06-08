@@ -145,10 +145,8 @@ func (p *APITranslationPlugin) ProcessRequest(ctx context.Context, cycleState *f
 		return nil
 	}
 
-	incomingFormat, _ := framework.ReadCycleStateKey[string](cycleState, state.InputAPIFormatKey)
-	apiFormat, _ := framework.ReadCycleStateKey[string](cycleState, state.APIFormatKey)
-	if incomingFormat != "" && apiFormat != "" && incomingFormat == apiFormat && incomingFormat != "openai" {
-		logger.Info("passthrough mode — skipping request translation", "incomingFormat", incomingFormat, "apiFormat", apiFormat)
+	if isPassthrough(cycleState) {
+		logger.Info("passthrough mode — skipping request translation")
 		request.RemoveHeader("authorization")
 		return nil
 	}
@@ -201,10 +199,8 @@ func (p *APITranslationPlugin) ProcessResponse(ctx context.Context, cycleState *
 		return nil
 	}
 
-	incomingFormat, _ := framework.ReadCycleStateKey[string](cycleState, state.InputAPIFormatKey)
-	apiFormat, _ := framework.ReadCycleStateKey[string](cycleState, state.APIFormatKey)
-	if incomingFormat != "" && apiFormat != "" && incomingFormat == apiFormat && incomingFormat != "openai" {
-		logger.Info("passthrough mode — skipping response translation", "incomingFormat", incomingFormat)
+	if isPassthrough(cycleState) {
+		logger.Info("passthrough mode — skipping response translation")
 		return nil
 	}
 
@@ -232,4 +228,29 @@ func (p *APITranslationPlugin) ProcessResponse(ctx context.Context, cycleState *
 
 	logger.Info("response api-translation completed successfully", "provider", providerName)
 	return nil
+}
+
+// isPassthrough checks whether the request should bypass translation.
+// Passthrough activates when:
+//  1. Both input and output API format keys are set in CycleState
+//  2. They match (client speaks the same format as the upstream provider)
+//  3. The format is NOT "openai-chat" — the OpenAI translator performs essential
+//     :path rewriting (strips model prefix path) that is needed even when both
+//     sides speak OpenAI format. Without this rewrite, the upstream provider would
+//     receive the full MaaS-prefixed path (e.g., /llm/model/v1/chat/completions).
+//
+// This design is intentionally generic: adding support for new API formats
+// (embeddings, audio, images) requires only adding a path mapping in
+// detectInputAPIFormat — no changes needed here.
+func isPassthrough(cycleState *framework.CycleState) bool {
+	inputFormat, _ := framework.ReadCycleStateKey[string](cycleState, state.InputAPIFormatKey)
+	outputFormat, _ := framework.ReadCycleStateKey[string](cycleState, state.APIFormatKey)
+	if inputFormat == "" || outputFormat == "" {
+		return false
+	}
+	if inputFormat != outputFormat {
+		return false
+	}
+	// OpenAI chat is excluded because the translator rewrites :path to strip the model prefix.
+	return inputFormat != "openai-chat"
 }
