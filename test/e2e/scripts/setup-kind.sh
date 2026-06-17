@@ -137,9 +137,9 @@ deploy_bbr() {
         --namespace "$GATEWAY_NAMESPACE" \
         --dependency-update \
         -f "$SCRIPT_DIR/e2e-values.yaml" \
-        --set upstreamBbr.inferenceGateway.name="$GATEWAY_NAME" \
-        --set upstreamBbr.provider.name=istio \
-        --set upstreamBbr.provider.istio.envoyFilter.operation=INSERT_FIRST
+        --set upstreamIpp.inferenceGateway.name="$GATEWAY_NAME" \
+        --set upstreamIpp.provider.name=istio \
+        --set upstreamIpp.provider.istio.envoyFilter.operation=INSERT_FIRST
 
     # Disable sidecar injection on BBR pod (ext_proc uses self-signed TLS,
     # sidecar intercepts and breaks the connection)

@@ -1,5 +1,5 @@
 upstreamIpp:
-  bbr:
+  payloadProcessor:
     name: payload-processing
     replicas: 1
     image:
@@ -10,33 +10,31 @@ upstreamIpp:
     port: 9004
     healthCheckPort: 9005
     multiNamespace: true
-
     flags:
-      # Log verbosity
       v: 3
-
-    # BBR plugins configuration.
-    # Format: type (registered plugin type), name (instance name), json (optional config object)
-    plugins:
+    customConfig:
+      plugins:
       - type: body-field-to-header
         name: model-extractor
-        json:
+        parameters:
           fieldName: model
           headerName: X-Gateway-Model-Name
       - type: model-provider-resolver
-        name: model-provider-resolver
       - type: api-translation
-        name: api-translation
-      # Ordering: apikey-injection must be last. SigV4 signs request.Body —
-      # do not add body-mutating plugins after this point.
       - type: apikey-injection
-        name: apikey-injection
+      profiles:
+      - name: default
+        plugins:
+          request:
+          - pluginRef: model-extractor
+          - pluginRef: model-provider-resolver
+          - pluginRef: api-translation
+          - pluginRef: apikey-injection
+          response:
+          - pluginRef: api-translation
 
   provider:
-    name: istio
-    istio:
-      envoyFilter:
-        operation: INSERT_AFTER
+    name: none
 
   inferenceGateway:
-    name: maas-default-gateway
+    name: inference-gateway

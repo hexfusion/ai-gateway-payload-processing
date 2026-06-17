@@ -1,22 +1,33 @@
 upstreamIpp:
-  bbr:
-    plugins:
+  payloadProcessor:
+    customConfig:
+      plugins:
       - type: body-field-to-header
         name: model-extractor
-        json:
+        parameters:
           fieldName: model
           headerName: X-Gateway-Model-Name
       - type: model-provider-resolver
         name: model-provider-resolver
-        json:
+        parameters:
           gatewayName: "e2e-gateway"
           gatewayNamespace: "default"
       - type: api-translation
         name: api-translation
-        json:
+        parameters:
           vertexOpenAI:
             project: "test-project"
             location: "us-central1"
             endpoint: "openapi"
       - type: apikey-injection
         name: apikey-injection
+      profiles:
+      - name: default
+        plugins:
+          request:
+          - pluginRef: model-extractor
+          - pluginRef: model-provider-resolver
+          - pluginRef: api-translation
+          - pluginRef: apikey-injection
+          response:
+          - pluginRef: api-translation
