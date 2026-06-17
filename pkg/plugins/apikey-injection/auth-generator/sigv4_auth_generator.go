@@ -27,7 +27,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
 
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/common/state"
 )
@@ -58,7 +59,7 @@ type SigV4AuthGenerator struct{}
 // from CycleState and the InferenceRequest. Region falls back to hostname extraction
 // if not set in config; endpoint, path and service are mandatory. The returned map is merged into
 // credentialsData before GenerateAuthHeaders is called.
-func (g *SigV4AuthGenerator) ExtractRequestData(cycleState *framework.CycleState, request *framework.InferenceRequest) (map[string]string, error) {
+func (g *SigV4AuthGenerator) ExtractRequestData(cycleState *plugin.CycleState, request *requesthandling.InferenceRequest) (map[string]string, error) {
 	// json.Marshal produces deterministic output (sorted map keys), ensuring the
 	// signed body matches what the framework sends upstream. If the framework ever
 	// changes its serializer, this assumption must be revisited.
@@ -67,7 +68,7 @@ func (g *SigV4AuthGenerator) ExtractRequestData(cycleState *framework.CycleState
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	endpoint, err := framework.ReadCycleStateKey[string](cycleState, state.EndpointKey)
+	endpoint, err := plugin.ReadCycleStateKey[string](cycleState, state.EndpointKey)
 	if err != nil || endpoint == "" {
 		return nil, fmt.Errorf("missing or empty endpoint in CycleState (key %q)", state.EndpointKey)
 	}
@@ -77,7 +78,7 @@ func (g *SigV4AuthGenerator) ExtractRequestData(cycleState *framework.CycleState
 		return nil, fmt.Errorf("missing :path pseudo-header in request")
 	}
 
-	config, _ := framework.ReadCycleStateKey[map[string]string](cycleState, state.ModelConfigKey)
+	config, _ := plugin.ReadCycleStateKey[map[string]string](cycleState, state.ModelConfigKey)
 
 	region := config["region"]
 	if region == "" {

@@ -28,8 +28,8 @@ import (
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	errcommon "sigs.k8s.io/gateway-api-inference-extension/pkg/common/error"
-	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/common/observability/logging"
+	errcommon "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/error"
+	logutil "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/observability/logging"
 )
 
 const (

@@ -26,10 +26,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
-	errcommon "sigs.k8s.io/gateway-api-inference-extension/pkg/common/error"
-	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/common/observability/logging"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/plugin"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	errcommon "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/error"
+	logutil "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/observability/logging"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
 
 	authgenerator "github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/apikey-injection/auth-generator"
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/common/auth"
@@ -42,10 +42,10 @@ const (
 )
 
 // compile-time interface check
-var _ framework.RequestProcessor = &ApiKeyInjectionPlugin{}
+var _ requesthandling.RequestProcessor = &ApiKeyInjectionPlugin{}
 
 // APIKeyInjectionFactory defines the factory function for ApiKeyInjectionPlugin.
-func APIKeyInjectionFactory(name string, _ json.RawMessage, handle framework.Handle) (framework.BBRPlugin, error) {
+func APIKeyInjectionFactory(name string, _ json.RawMessage, handle plugin.Handle) (plugin.Plugin, error) {
 	plugin, err := NewAPIKeyInjectionPlugin(handle.ReconcilerBuilder, handle.Client())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create plugin '%s' - %w", APIKeyInjectionPluginType, err)
@@ -101,22 +101,22 @@ func (p *ApiKeyInjectionPlugin) WithName(name string) *ApiKeyInjectionPlugin {
 
 // ProcessRequest reads the credential Secret reference and authType from CycleState (written by model-provider-resolver),
 // looks up the API key in the store, and injects auth headers into the request.
-func (p *ApiKeyInjectionPlugin) ProcessRequest(ctx context.Context, cycleState *framework.CycleState, request *framework.InferenceRequest) error {
+func (p *ApiKeyInjectionPlugin) ProcessRequest(ctx context.Context, cycleState *plugin.CycleState, request *requesthandling.InferenceRequest) error {
 	logger := log.FromContext(ctx).V(logutil.DEFAULT)
 
 	// Check if this is an external model (authType set by model-provider-resolver).
 	// Internal models have no authType in CycleState and don't need API key injection.
-	authType, err := framework.ReadCycleStateKey[auth.Auth](cycleState, state.AuthTypeKey)
+	authType, err := plugin.ReadCycleStateKey[auth.Auth](cycleState, state.AuthTypeKey)
 	if err != nil || authType == "" {
 		return nil
 	}
 
-	credsName, err := framework.ReadCycleStateKey[string](cycleState, state.CredsRefName)
+	credsName, err := plugin.ReadCycleStateKey[string](cycleState, state.CredsRefName)
 	if err != nil || credsName == "" {
 		logger.Error(err, "credentialRef name missing", "authType", authType)
 		return errcommon.Error{Code: errcommon.Internal, Msg: fmt.Sprintf("authType '%s' is missing credentialRef", authType)}
 	}
-	credsNamespace, err := framework.ReadCycleStateKey[string](cycleState, state.CredsRefNamespace)
+	credsNamespace, err := plugin.ReadCycleStateKey[string](cycleState, state.CredsRefNamespace)
 	if err != nil || credsNamespace == "" {
 		logger.Error(err, "credentialRef namespace missing", "authType", authType)
 		return errcommon.Error{Code: errcommon.Internal, Msg: fmt.Sprintf("authType '%s' is missing credentialRef namespace", authType)}

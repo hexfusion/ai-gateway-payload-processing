@@ -26,7 +26,7 @@ COPY cmd/ cmd/
 COPY pkg/ pkg/
 
 # -X needs the exact import path of the dependency's version package (matches go.mod / module graph).
-RUN VERSION_PKG="$(go list -f '{{.ImportPath}}' sigs.k8s.io/gateway-api-inference-extension/version)" && \
+RUN VERSION_PKG="$(go list -f '{{.ImportPath}}' github.com/llm-d/llm-d-inference-payload-processor/version)" && \
 	CGO_ENABLED=${CGO_ENABLED} GOEXPERIMENT=strictfipsruntime GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
 	go build -a -trimpath -ldflags="-s -w -X ${VERSION_PKG}.CommitSHA=${COMMIT_SHA} -X ${VERSION_PKG}.BuildRef=${BUILD_REF}" -o /bbr ./cmd
 

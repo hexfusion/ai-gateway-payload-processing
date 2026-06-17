@@ -21,9 +21,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
-	errcommon "sigs.k8s.io/gateway-api-inference-extension/pkg/common/error"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/plugin"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	errcommon "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/error"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
 )
 
 const (
@@ -32,7 +32,7 @@ const (
 )
 
 // compile-time type validation
-var _ framework.ResponseProcessor = &NemoResponseGuardPlugin{}
+var _ requesthandling.ResponseProcessor = &NemoResponseGuardPlugin{}
 
 // NemoResponseGuardPlugin calls a NeMo Guardrails service over HTTP to check model output
 // using output rails. It implements ResponseProcessor to inspect responses before returning
@@ -43,7 +43,7 @@ type NemoResponseGuardPlugin struct {
 }
 
 // NemoResponseGuardFactory is the factory function for NemoResponseGuardPlugin.
-func NemoResponseGuardFactory(name string, rawParameters json.RawMessage, _ framework.Handle) (framework.BBRPlugin, error) {
+func NemoResponseGuardFactory(name string, rawParameters json.RawMessage, _ plugin.Handle) (plugin.Plugin, error) {
 	config := nemoGuardConfig{
 		TimeoutSeconds: defaultTimeoutSec,
 	}
@@ -94,7 +94,7 @@ func (p *NemoResponseGuardPlugin) WithName(name string) *NemoResponseGuardPlugin
 // conveyed through the response body "status" field: "passed" means the response passed
 // all rails, "modified" means content was redacted (currently passed through as-is),
 // and "blocked" means the response is blocked.
-func (p *NemoResponseGuardPlugin) ProcessResponse(ctx context.Context, _ *framework.CycleState, response *framework.InferenceResponse) error {
+func (p *NemoResponseGuardPlugin) ProcessResponse(ctx context.Context, _ *plugin.CycleState, response *requesthandling.InferenceResponse) error {
 	messages, err := extractAssistantMessages(response.Body)
 	if err != nil {
 		return errcommon.Error{Code: errcommon.Internal, Msg: fmt.Sprintf("malformed response body: %v", err)}

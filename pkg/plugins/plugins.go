@@ -21,13 +21,13 @@ import (
 	apikey_injection "github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/apikey-injection"
 	provider_resolver "github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/model-provider-resolver"
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/nemo"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
 )
 
 func RegisterPlugins() {
-	framework.Register(provider_resolver.ModelProviderResolverPluginType, provider_resolver.ModelProviderResolverFactory)
-	framework.Register(api_translation.APITranslationPluginType, api_translation.APITranslationFactory)
-	framework.Register(apikey_injection.APIKeyInjectionPluginType, apikey_injection.APIKeyInjectionFactory)
-	framework.Register(nemo.NemoRequestGuardPluginType, nemo.NemoRequestGuardFactory)
-	framework.Register(nemo.NemoResponseGuardPluginType, nemo.NemoResponseGuardFactory)
+	plugin.Register(provider_resolver.ModelProviderResolverPluginType, provider_resolver.ModelProviderResolverFactory)
+	plugin.Register(api_translation.APITranslationPluginType, api_translation.APITranslationFactory)
+	plugin.Register(apikey_injection.APIKeyInjectionPluginType, apikey_injection.APIKeyInjectionFactory)
+	plugin.Register(nemo.NemoRequestGuardPluginType, nemo.NemoRequestGuardFactory)
+	plugin.Register(nemo.NemoResponseGuardPluginType, nemo.NemoResponseGuardFactory)
 }

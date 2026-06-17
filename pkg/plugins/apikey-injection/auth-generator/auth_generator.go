@@ -16,7 +16,10 @@ limitations under the License.
 
 package authgenerator
 
-import "sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
+import (
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+)
 
 // AuthHeadersGenerator generates auth headers from credential fields.
 // Each implementation defines which fields it requires from the credentials map.
@@ -25,7 +28,7 @@ type AuthHeadersGenerator interface {
 	// that is needed for auth header generation (e.g., body, endpoint for SigV4).
 	// The returned map is merged into credentialsData before GenerateAuthHeaders is called.
 	// Implementations that don't need request data should return nil, nil.
-	ExtractRequestData(cycleState *framework.CycleState, request *framework.InferenceRequest) (map[string]string, error)
+	ExtractRequestData(cycleState *plugin.CycleState, request *requesthandling.InferenceRequest) (map[string]string, error)
 
 	GenerateAuthHeaders(credentialsData map[string]string) (map[string]string, error)
 }

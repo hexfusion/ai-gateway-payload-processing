@@ -22,7 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/require"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
 
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/common/auth"
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/common/state"
@@ -154,11 +155,11 @@ func TestSimpleExtractRequestData(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			cs := framework.NewCycleState()
+			cs := plugin.NewCycleState()
 			cs.Write(state.ModelConfigKey, test.config)
 
 			generator := NewSimpleAuthGenerator()
-			result, err := generator.ExtractRequestData(cs, framework.NewInferenceRequest())
+			result, err := generator.ExtractRequestData(cs, requesthandling.NewInferenceRequest())
 
 			require.NoError(t, err)
 			require.Equal(t, test.wantHeaderName, result[auth.SimpleAuthHeaderName])
@@ -169,7 +170,7 @@ func TestSimpleExtractRequestData(t *testing.T) {
 
 func TestSimpleExtractRequestData_MissingModelConfigKey(t *testing.T) {
 	generator := NewSimpleAuthGenerator()
-	_, err := generator.ExtractRequestData(framework.NewCycleState(), framework.NewInferenceRequest())
+	_, err := generator.ExtractRequestData(plugin.NewCycleState(), requesthandling.NewInferenceRequest())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to extract config from cycle state")
 }

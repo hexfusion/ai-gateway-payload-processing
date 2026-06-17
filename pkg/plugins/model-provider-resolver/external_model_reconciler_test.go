@@ -52,8 +52,6 @@ func (m *mockModelReader) List(_ context.Context, _ client.ObjectList, _ ...clie
 	return nil
 }
 
-
-
 func newTestModel(name, ns string, refs ...inferencev1alpha1.ExternalProviderRef) *inferencev1alpha1.ExternalModel {
 	return &inferencev1alpha1.ExternalModel{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},

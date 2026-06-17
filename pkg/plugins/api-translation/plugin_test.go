@@ -25,8 +25,9 @@ import (
 	"github.com/stretchr/testify/require"
 	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/plugin"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/datalayer"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
 
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/api-translation/translator"
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/common/apiformat"
@@ -42,6 +43,12 @@ type testHandle struct{}
 func (h *testHandle) Context() context.Context                { return context.Background() }
 func (h *testHandle) Client() client.Client                   { return nil }
 func (h *testHandle) ReconcilerBuilder() *ctrlbuilder.Builder { return nil }
+func (h *testHandle) AddPlugin(_ string, _ plugin.Plugin)    {}
+func (h *testHandle) Plugin(_ string) plugin.Plugin           { return nil }
+func (h *testHandle) Datastore() datalayer.Datastore           { return nil }
+func (h *testHandle) EventNotifier() datalayer.EventNotifier   { return nil }
+func (h *testHandle) GetAllPlugins() []plugin.Plugin           { return nil }
+func (h *testHandle) GetAllPluginsWithNames() map[string]plugin.Plugin { return nil }
 
 func newTestPlugin() *APITranslationPlugin {
 	p, _ := NewAPITranslationPlugin(context.Background(), apiTranslationConfig{})
@@ -84,8 +91,8 @@ func newPluginWithMock(providerName string, mock *mockTranslator) *APITranslatio
 	}
 }
 
-func newCycleStateWithProvider(providerName string) *framework.CycleState {
-	cs := framework.NewCycleState()
+func newCycleStateWithProvider(providerName string) *plugin.CycleState {
+	cs := plugin.NewCycleState()
 	cs.Write(state.ProviderKey, providerName)
 	return cs
 }
@@ -97,11 +104,11 @@ func newCycleStateWithProvider(providerName string) *framework.CycleState {
 func TestProcessRequest_NoProvider(t *testing.T) {
 	p := newTestPlugin()
 
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Body["model"] = "gpt-4o"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "Hi"}}
 
-	err := p.ProcessRequest(context.Background(), framework.NewCycleState(), req)
+	err := p.ProcessRequest(context.Background(), plugin.NewCycleState(), req)
 	assert.NoError(t, err)
 	assert.False(t, req.BodyMutated())
 }
@@ -110,7 +117,7 @@ func TestProcessRequest_OpenAIProvider(t *testing.T) {
 	p := newTestPlugin()
 
 	cs := newCycleStateWithProvider("openai")
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Body["model"] = "gpt-4o"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "Hi"}}
 
@@ -123,7 +130,7 @@ func TestProcessRequest_UnknownProvider(t *testing.T) {
 	p := newTestPlugin()
 
 	cs := newCycleStateWithProvider("unknown")
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Body["model"] = "some-model"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "Hi"}}
 
@@ -146,7 +153,7 @@ func TestProcessRequest_BodyMutated(t *testing.T) {
 	p := newPluginWithMock("test-provider", mock)
 
 	cs := newCycleStateWithProvider("test-provider")
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Headers["authorization"] = "Bearer sk-test"
 	req.Headers["x-custom"] = "val"
 	req.Body["model"] = "m"
@@ -175,7 +182,7 @@ func TestProcessRequest_NilBody_NoMutation(t *testing.T) {
 	p := newPluginWithMock("test-provider", mock)
 
 	cs := newCycleStateWithProvider("test-provider")
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Headers["authorization"] = "Bearer sk-test"
 	req.Body["model"] = "gpt-4o"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "Hi"}}
@@ -199,7 +206,7 @@ func TestProcessRequest_AuthorizationAlwaysRemoved(t *testing.T) {
 	p := newPluginWithMock("test-provider", mock)
 
 	cs := newCycleStateWithProvider("test-provider")
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Headers["authorization"] = "Bearer sk-test"
 	req.Body["model"] = "m"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "Hi"}}
@@ -219,7 +226,7 @@ func TestProcessRequest_TranslatorError(t *testing.T) {
 	p := newPluginWithMock("test-provider", mock)
 
 	cs := newCycleStateWithProvider("test-provider")
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "Hi"}}
 
 	err := p.ProcessRequest(context.Background(), cs, req)
@@ -233,7 +240,7 @@ func TestProcessRequest_ReceivesOriginalBody(t *testing.T) {
 	p := newPluginWithMock("test-provider", mock)
 
 	cs := newCycleStateWithProvider("test-provider")
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Body["model"] = "my-model"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "test"}}
 
@@ -250,13 +257,13 @@ func TestProcessRequest_ReceivesOriginalBody(t *testing.T) {
 func TestProcessResponse_NoProviderPassthrough(t *testing.T) {
 	p := newTestPlugin()
 
-	resp := framework.NewInferenceResponse()
+	resp := requesthandling.NewInferenceResponse()
 	resp.Body["object"] = "chat.completion"
 	resp.Body["choices"] = []any{
 		map[string]any{"message": map[string]any{"content": "hi"}},
 	}
 
-	err := p.ProcessResponse(context.Background(), framework.NewCycleState(), resp)
+	err := p.ProcessResponse(context.Background(), plugin.NewCycleState(), resp)
 	assert.NoError(t, err)
 	assert.False(t, resp.BodyMutated())
 }
@@ -266,7 +273,7 @@ func TestProcessResponse_OpenAIPassthrough(t *testing.T) {
 
 	cs := newCycleStateWithProvider("openai")
 
-	resp := framework.NewInferenceResponse()
+	resp := requesthandling.NewInferenceResponse()
 	resp.Body["object"] = "chat.completion"
 
 	err := p.ProcessResponse(context.Background(), cs, resp)
@@ -291,7 +298,7 @@ func TestProcessResponse_BodyMutated(t *testing.T) {
 	cs := newCycleStateWithProvider("test-provider")
 	cs.Write(state.ModelKey, "test-model")
 
-	resp := framework.NewInferenceResponse()
+	resp := requesthandling.NewInferenceResponse()
 	resp.Body["original"] = "data"
 
 	err := p.ProcessResponse(context.Background(), cs, resp)
@@ -309,7 +316,7 @@ func TestProcessResponse_NilBody_NoMutation(t *testing.T) {
 
 	cs := newCycleStateWithProvider("test-provider")
 
-	resp := framework.NewInferenceResponse()
+	resp := requesthandling.NewInferenceResponse()
 	resp.Body["object"] = "chat.completion"
 
 	err := p.ProcessResponse(context.Background(), cs, resp)
@@ -325,7 +332,7 @@ func TestProcessResponse_ModelPassedToTranslator(t *testing.T) {
 	cs := newCycleStateWithProvider("test-provider")
 	cs.Write(state.ModelKey, "my-model-name")
 
-	resp := framework.NewInferenceResponse()
+	resp := requesthandling.NewInferenceResponse()
 	resp.Body["data"] = "something"
 
 	err := p.ProcessResponse(context.Background(), cs, resp)
@@ -343,7 +350,7 @@ func TestProcessResponse_TranslatorError(t *testing.T) {
 
 	cs := newCycleStateWithProvider("test-provider")
 
-	resp := framework.NewInferenceResponse()
+	resp := requesthandling.NewInferenceResponse()
 	resp.Body["data"] = "something"
 
 	err := p.ProcessResponse(context.Background(), cs, resp)
@@ -357,7 +364,7 @@ func TestProcessResponse_UnknownProvider(t *testing.T) {
 
 	cs := newCycleStateWithProvider("unknown")
 
-	resp := framework.NewInferenceResponse()
+	resp := requesthandling.NewInferenceResponse()
 	resp.Body["data"] = "something"
 
 	err := p.ProcessResponse(context.Background(), cs, resp)
@@ -394,7 +401,7 @@ func TestIsPassthrough(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cs := framework.NewCycleState()
+			cs := plugin.NewCycleState()
 			if tt.input != "" {
 				cs.Write(state.InputAPIFormatKey, tt.input)
 			}
@@ -408,12 +415,12 @@ func TestIsPassthrough(t *testing.T) {
 
 func TestPassthrough_SkipsRequestTranslation(t *testing.T) {
 	p, _ := NewAPITranslationPlugin(context.Background(), apiTranslationConfig{})
-	cs := framework.NewCycleState()
+	cs := plugin.NewCycleState()
 	cs.Write(state.ProviderKey, "anthropic")
 	cs.Write(state.InputAPIFormatKey, apiformat.Messages)
 	cs.Write(state.APIFormatKey, apiformat.Messages)
 
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Body["model"] = "claude-opus-4-6"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "hi"}}
 	req.Headers["authorization"] = "Bearer sk-test"
@@ -432,12 +439,12 @@ func TestPassthrough_SkipsRequestTranslation(t *testing.T) {
 
 func TestPassthrough_SkipsResponseTranslation(t *testing.T) {
 	p, _ := NewAPITranslationPlugin(context.Background(), apiTranslationConfig{})
-	cs := framework.NewCycleState()
+	cs := plugin.NewCycleState()
 	cs.Write(state.ProviderKey, "anthropic")
 	cs.Write(state.InputAPIFormatKey, apiformat.Messages)
 	cs.Write(state.APIFormatKey, apiformat.Messages)
 
-	resp := framework.NewInferenceResponse()
+	resp := requesthandling.NewInferenceResponse()
 	resp.Body["type"] = "message"
 	resp.Body["content"] = []any{map[string]any{"type": "text", "text": "hello"}}
 

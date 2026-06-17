@@ -1,4 +1,4 @@
-upstreamBbr:
+upstreamIpp:
   bbr:
     plugins:
       - type: body-field-to-header

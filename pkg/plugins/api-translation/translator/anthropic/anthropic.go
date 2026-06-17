@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/api-translation/translator"
-	errcommon "sigs.k8s.io/gateway-api-inference-extension/pkg/common/error"
+	errcommon "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/error"
 )
 
 const (

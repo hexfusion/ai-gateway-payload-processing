@@ -27,8 +27,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
-	errcommon "sigs.k8s.io/gateway-api-inference-extension/pkg/common/error"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
+	errcommon "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/error"
 )
 
 // nemoAllowedJSON is a minimal NeMo guard response that means “allow”.
@@ -308,15 +309,15 @@ func TestNemoRequestGuardProcessRequest(t *testing.T) {
 			p, err := NewNemoRequestGuardPlugin(baseURL, 30)
 			require.NoError(t, err)
 
-			var req *framework.InferenceRequest
+			var req *requesthandling.InferenceRequest
 			if tt.body != nil {
-				req = framework.NewInferenceRequest()
+				req = requesthandling.NewInferenceRequest()
 				for k, v := range tt.body {
 					req.Body[k] = v
 				}
 			}
 
-			err = p.ProcessRequest(context.Background(), framework.NewCycleState(), req)
+			err = p.ProcessRequest(context.Background(), plugin.NewCycleState(), req)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -347,10 +348,10 @@ func TestNemoRequestGuardSendsCorrectPayload(t *testing.T) {
 	p, err := NewNemoRequestGuardPlugin(srv.URL, 30)
 	require.NoError(t, err)
 
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Body["model"] = "client-model"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "Hello"}}
-	err = p.ProcessRequest(context.Background(), framework.NewCycleState(), req)
+	err = p.ProcessRequest(context.Background(), plugin.NewCycleState(), req)
 	require.NoError(t, err)
 
 	assert.Equal(t, "client-model", capturedReq["model"])
@@ -370,7 +371,7 @@ func TestNemoRequestGuardSendsCorrectPayloadMCP(t *testing.T) {
 	p, err := NewNemoRequestGuardPlugin(srv.URL, 30)
 	require.NoError(t, err)
 
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Body["jsonrpc"] = "2.0"
 	req.Body["id"] = float64(3)
 	req.Body["method"] = "tools/call"
@@ -378,7 +379,7 @@ func TestNemoRequestGuardSendsCorrectPayloadMCP(t *testing.T) {
 		"name":      "cal_greet",
 		"arguments": map[string]any{"name": "hello world"},
 	}
-	err = p.ProcessRequest(context.Background(), framework.NewCycleState(), req)
+	err = p.ProcessRequest(context.Background(), plugin.NewCycleState(), req)
 	require.NoError(t, err)
 
 	msgs, ok := capturedReq["messages"].([]any)
@@ -402,7 +403,7 @@ func TestNemoRequestGuardForwardsAllMessages(t *testing.T) {
 	p, err := NewNemoRequestGuardPlugin(srv.URL, 30)
 	require.NoError(t, err)
 
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Body["model"] = "gpt-4"
 	req.Body["messages"] = []any{
 		map[string]any{"role": "system", "content": "You are helpful"},
@@ -411,7 +412,7 @@ func TestNemoRequestGuardForwardsAllMessages(t *testing.T) {
 		map[string]any{"role": "tool", "content": "Tool output"},
 		map[string]any{"role": "user", "content": "Follow-up"},
 	}
-	err = p.ProcessRequest(context.Background(), framework.NewCycleState(), req)
+	err = p.ProcessRequest(context.Background(), plugin.NewCycleState(), req)
 	require.NoError(t, err)
 
 	messages, ok := capturedReq["messages"].([]any)
@@ -437,10 +438,10 @@ func TestNemoRequestGuardBaseURLTrailingSlash(t *testing.T) {
 	p, err := NewNemoRequestGuardPlugin(srv.URL+"//", 30)
 	require.NoError(t, err)
 
-	req := framework.NewInferenceRequest()
+	req := requesthandling.NewInferenceRequest()
 	req.Body["model"] = "gpt-4"
 	req.Body["messages"] = []any{map[string]any{"role": "user", "content": "Hello"}}
-	err = p.ProcessRequest(context.Background(), framework.NewCycleState(), req)
+	err = p.ProcessRequest(context.Background(), plugin.NewCycleState(), req)
 	require.NoError(t, err)
 
 	assert.True(t, strings.HasPrefix(calledPath, "/"), "request path should be absolute: %q", calledPath)

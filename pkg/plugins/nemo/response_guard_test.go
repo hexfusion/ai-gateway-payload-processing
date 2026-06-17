@@ -27,8 +27,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
-	errcommon "sigs.k8s.io/gateway-api-inference-extension/pkg/common/error"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
+	errcommon "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/error"
 )
 
 // --- NewNemoResponseGuardPlugin construction ---
@@ -294,12 +295,12 @@ func TestNemoResponseGuardProcessResponse(t *testing.T) {
 			p, err := NewNemoResponseGuardPlugin(baseURL, 30)
 			require.NoError(t, err)
 
-			resp := framework.NewInferenceResponse()
+			resp := requesthandling.NewInferenceResponse()
 			for k, v := range tt.body {
 				resp.Body[k] = v
 			}
 
-			err = p.ProcessResponse(context.Background(), framework.NewCycleState(), resp)
+			err = p.ProcessResponse(context.Background(), plugin.NewCycleState(), resp)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -330,13 +331,13 @@ func TestNemoResponseGuardSendsCorrectPayload(t *testing.T) {
 	p, err := NewNemoResponseGuardPlugin(srv.URL, 30)
 	require.NoError(t, err)
 
-	resp := framework.NewInferenceResponse()
+	resp := requesthandling.NewInferenceResponse()
 	resp.Body["choices"] = []any{
 		map[string]any{
 			"message": map[string]any{"role": "assistant", "content": "Here is the answer."},
 		},
 	}
-	err = p.ProcessResponse(context.Background(), framework.NewCycleState(), resp)
+	err = p.ProcessResponse(context.Background(), plugin.NewCycleState(), resp)
 	require.NoError(t, err)
 
 	messages, ok := capturedReq["messages"].([]any)
@@ -359,14 +360,14 @@ func TestNemoResponseGuardForwardsModel(t *testing.T) {
 	p, err := NewNemoResponseGuardPlugin(srv.URL, 30)
 	require.NoError(t, err)
 
-	resp := framework.NewInferenceResponse()
+	resp := requesthandling.NewInferenceResponse()
 	resp.Body["model"] = "gpt-4"
 	resp.Body["choices"] = []any{
 		map[string]any{
 			"message": map[string]any{"role": "assistant", "content": "Answer"},
 		},
 	}
-	err = p.ProcessResponse(context.Background(), framework.NewCycleState(), resp)
+	err = p.ProcessResponse(context.Background(), plugin.NewCycleState(), resp)
 	require.NoError(t, err)
 
 	assert.Equal(t, "gpt-4", capturedReq["model"])
@@ -384,13 +385,13 @@ func TestNemoResponseGuardBaseURLTrailingSlash(t *testing.T) {
 	p, err := NewNemoResponseGuardPlugin(srv.URL+"//", 30)
 	require.NoError(t, err)
 
-	resp := framework.NewInferenceResponse()
+	resp := requesthandling.NewInferenceResponse()
 	resp.Body["choices"] = []any{
 		map[string]any{
 			"message": map[string]any{"role": "assistant", "content": "Hello"},
 		},
 	}
-	err = p.ProcessResponse(context.Background(), framework.NewCycleState(), resp)
+	err = p.ProcessResponse(context.Background(), plugin.NewCycleState(), resp)
 	require.NoError(t, err)
 
 	assert.True(t, strings.HasPrefix(calledPath, "/"), "request path should be absolute: %q", calledPath)

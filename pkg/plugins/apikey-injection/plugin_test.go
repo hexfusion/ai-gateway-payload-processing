@@ -25,8 +25,8 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/plugin"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
 
 	authgenerator "github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/apikey-injection/auth-generator"
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/common/auth"
@@ -48,8 +48,8 @@ func newTestPlugin(store *secretStore) *ApiKeyInjectionPlugin {
 
 // newBedrockRequest creates an InferenceRequest pre-populated with a model body
 // field and :path, simulating a real client request routed to Bedrock.
-func newBedrockRequest() *framework.InferenceRequest {
-	req := framework.NewInferenceRequest()
+func newBedrockRequest() *requesthandling.InferenceRequest {
+	req := requesthandling.NewInferenceRequest()
 	req.Body["model"] = "anthropic.claude-v2"
 	req.Body["prompt"] = "hello"
 	req.Headers[":path"] = "/default/bedrock-model/v1/chat/completions"
@@ -57,7 +57,7 @@ func newBedrockRequest() *framework.InferenceRequest {
 }
 
 // newSigV4CycleState builds a CycleState with credential ref, sigv4 auth type, endpoint, and config.
-func newSigV4CycleState(credsNamespace, credsName string) *framework.CycleState {
+func newSigV4CycleState(credsNamespace, credsName string) *plugin.CycleState {
 	cs := newCycleState(credsNamespace, credsName, auth.SigV4)
 	cs.Write(state.EndpointKey, "bedrock-runtime.us-east-1.amazonaws.com")
 	cs.Write(state.ModelConfigKey, map[string]string{"service": "bedrock"})
@@ -67,15 +67,15 @@ func newSigV4CycleState(credsNamespace, credsName string) *framework.CycleState 
 // newSimpleCycleState builds a CycleState with credential ref, simple auth type,
 // and config. The config simulates what the provider reconciler would inject
 // (e.g. authHeaderName for providers like Anthropic/Azure).
-func newSimpleCycleState(credsNamespace, credsName string, config map[string]string) *framework.CycleState {
+func newSimpleCycleState(credsNamespace, credsName string, config map[string]string) *plugin.CycleState {
 	cs := newCycleState(credsNamespace, credsName, auth.Simple)
 	cs.Write(state.ModelConfigKey, config)
 	return cs
 }
 
 // newCycleState builds a CycleState with credential ref and auth type.
-func newCycleState(credsNamespace, credsName string, authType auth.Auth) *framework.CycleState {
-	cs := framework.NewCycleState()
+func newCycleState(credsNamespace, credsName string, authType auth.Auth) *plugin.CycleState {
+	cs := plugin.NewCycleState()
 	cs.Write(state.CredsRefName, credsName)
 	cs.Write(state.CredsRefNamespace, credsNamespace)
 	cs.Write(state.AuthTypeKey, authType)
@@ -86,14 +86,14 @@ func TestProcessRequest(t *testing.T) {
 	tests := []struct {
 		name              string
 		secrets           []*corev1.Secret
-		prepareCycleState func() *framework.CycleState
+		prepareCycleState func() *plugin.CycleState
 		wantHeaders       map[string]string
 		errorContains     string
 	}{
 		{
 			name:    "simple auth with default Bearer prefix (OpenAI style)",
 			secrets: []*corev1.Secret{testSecret("default", "openai-key", map[string]string{"api-key": "sk-test-key"})},
-			prepareCycleState: func() *framework.CycleState {
+			prepareCycleState: func() *plugin.CycleState {
 				return newSimpleCycleState("default", "openai-key", map[string]string{})
 			},
 			wantHeaders: map[string]string{
@@ -103,7 +103,7 @@ func TestProcessRequest(t *testing.T) {
 		{
 			name:    "simple auth with config-injected header (Anthropic style)",
 			secrets: []*corev1.Secret{testSecret("default", "anthropic-key", map[string]string{"api-key": "ant-key-123"})},
-			prepareCycleState: func() *framework.CycleState {
+			prepareCycleState: func() *plugin.CycleState {
 				return newSimpleCycleState("default", "anthropic-key", map[string]string{auth.SimpleAuthHeaderName: "x-api-key"})
 			},
 			wantHeaders: map[string]string{
@@ -113,20 +113,20 @@ func TestProcessRequest(t *testing.T) {
 		{
 			name:              "unknown auth type — request fails",
 			secrets:           []*corev1.Secret{testSecret("default", "no-auth", map[string]string{"api-key": "sk-key"})},
-			prepareCycleState: func() *framework.CycleState { return newCycleState("default", "no-auth", "unknown-auth-type") },
+			prepareCycleState: func() *plugin.CycleState { return newCycleState("default", "no-auth", "unknown-auth-type") },
 			errorContains:     "unsupported authType",
 		},
 		{
 			name:              "internal model no auth type - skip gracefully",
 			secrets:           []*corev1.Secret{testSecret("default", "no-auth", map[string]string{"api-key": "sk-key"})},
-			prepareCycleState: func() *framework.CycleState { return framework.NewCycleState() },
+			prepareCycleState: func() *plugin.CycleState { return plugin.NewCycleState() },
 			wantHeaders:       map[string]string{},
 		},
 		{
 			name:    "missing credentials ref results in error",
 			secrets: []*corev1.Secret{testSecret("default", "no-creds", map[string]string{"api-key": "sk-key"})},
-			prepareCycleState: func() *framework.CycleState {
-				cs := framework.NewCycleState()
+			prepareCycleState: func() *plugin.CycleState {
+				cs := plugin.NewCycleState()
 				cs.Write(state.AuthTypeKey, auth.Simple) // external model has auth type but no creds
 				return cs
 			},
@@ -135,7 +135,7 @@ func TestProcessRequest(t *testing.T) {
 		{
 			name:    "credentials not found results in error",
 			secrets: []*corev1.Secret{},
-			prepareCycleState: func() *framework.CycleState {
+			prepareCycleState: func() *plugin.CycleState {
 				return newSimpleCycleState("default", "unknown", map[string]string{})
 			},
 			errorContains: "credentials not found",
@@ -143,7 +143,7 @@ func TestProcessRequest(t *testing.T) {
 		{
 			name:    "missing api-key field in credentials results in error",
 			secrets: []*corev1.Secret{testSecret("default", "wrong-fields", map[string]string{"wrong-field": "value"})},
-			prepareCycleState: func() *framework.CycleState {
+			prepareCycleState: func() *plugin.CycleState {
 				return newSimpleCycleState("default", "wrong-fields", map[string]string{})
 			},
 			errorContains: "failed to generate auth headers",
@@ -158,7 +158,7 @@ func TestProcessRequest(t *testing.T) {
 			}
 
 			plugin := newTestPlugin(store)
-			request := framework.NewInferenceRequest()
+			request := requesthandling.NewInferenceRequest()
 			err := plugin.ProcessRequest(context.Background(), test.prepareCycleState(), request)
 			if test.errorContains != "" {
 				require.ErrorContains(t, err, test.errorContains)
@@ -176,7 +176,7 @@ func TestProcessRequest_AWSBedrock(t *testing.T) {
 	tests := []struct {
 		name              string
 		secrets           []*corev1.Secret
-		prepareCycleState func() *framework.CycleState
+		prepareCycleState func() *plugin.CycleState
 		wantSecurityToken string // exact value; empty means the header must be absent
 		errorContains     string
 	}{
@@ -186,7 +186,7 @@ func TestProcessRequest_AWSBedrock(t *testing.T) {
 				"aws-access-key-id":     "AKIAIOSFODNN7EXAMPLE",
 				"aws-secret-access-key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 			})},
-			prepareCycleState: func() *framework.CycleState { return newSigV4CycleState("default", "bedrock-creds") },
+			prepareCycleState: func() *plugin.CycleState { return newSigV4CycleState("default", "bedrock-creds") },
 		},
 		{
 			name: "includes security token when session token is present",
@@ -195,7 +195,7 @@ func TestProcessRequest_AWSBedrock(t *testing.T) {
 				"aws-secret-access-key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 				"aws-session-token":     "FwoGZXIvYXdzEBYaDH7example-session-token",
 			})},
-			prepareCycleState: func() *framework.CycleState { return newSigV4CycleState("default", "bedrock-creds") },
+			prepareCycleState: func() *plugin.CycleState { return newSigV4CycleState("default", "bedrock-creds") },
 			wantSecurityToken: "FwoGZXIvYXdzEBYaDH7example-session-token",
 		},
 		{
@@ -204,7 +204,7 @@ func TestProcessRequest_AWSBedrock(t *testing.T) {
 				"aws-access-key-id":     "AKIAIOSFODNN7EXAMPLE",
 				"aws-secret-access-key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 			})},
-			prepareCycleState: func() *framework.CycleState {
+			prepareCycleState: func() *plugin.CycleState {
 				cs := newSigV4CycleState("default", "bedrock-creds")
 				cs.Write(state.ModelConfigKey, map[string]string{"region": "ap-northeast-1", "service": "bedrock"})
 				return cs
@@ -216,13 +216,13 @@ func TestProcessRequest_AWSBedrock(t *testing.T) {
 				"aws-access-key-id":     "AKIAIOSFODNN7EXAMPLE",
 				"aws-secret-access-key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 			})},
-			prepareCycleState: func() *framework.CycleState { return newCycleState("default", "bedrock-creds", auth.SigV4) },
+			prepareCycleState: func() *plugin.CycleState { return newCycleState("default", "bedrock-creds", auth.SigV4) },
 			errorContains:     "failed to extract request data",
 		},
 		{
 			name:              "missing aws credentials returns error",
 			secrets:           []*corev1.Secret{testSecret("default", "bedrock-creds", map[string]string{"wrong-field": "value"})},
-			prepareCycleState: func() *framework.CycleState { return newSigV4CycleState("default", "bedrock-creds") },
+			prepareCycleState: func() *plugin.CycleState { return newSigV4CycleState("default", "bedrock-creds") },
 			errorContains:     "failed to generate auth headers",
 		},
 	}

@@ -1,4 +1,4 @@
-upstreamBbr:
+upstreamIpp:
   bbr:
     name: payload-processing
     replicas: 1

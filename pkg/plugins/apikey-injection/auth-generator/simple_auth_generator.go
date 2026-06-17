@@ -21,7 +21,8 @@ import (
 
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/common/auth"
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/common/state"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
 )
 
 // apiKeyField is the field name in the credentials map that holds the API key.
@@ -49,8 +50,8 @@ type SimpleAuthGenerator struct{}
 // model config in CycleState. Provider-specific defaults (e.g. "x-api-key" for
 // Anthropic) are injected into the config by the provider reconciler. If not
 // set, falls back to "Authorization" with "Bearer " prefix.
-func (g *SimpleAuthGenerator) ExtractRequestData(cycleState *framework.CycleState, _ *framework.InferenceRequest) (map[string]string, error) {
-	config, err := framework.ReadCycleStateKey[map[string]string](cycleState, state.ModelConfigKey)
+func (g *SimpleAuthGenerator) ExtractRequestData(cycleState *plugin.CycleState, _ *requesthandling.InferenceRequest) (map[string]string, error) {
+	config, err := plugin.ReadCycleStateKey[map[string]string](cycleState, state.ModelConfigKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract config from cycle state - %w", err)
 	}

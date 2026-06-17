@@ -31,10 +31,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
-	errcommon "sigs.k8s.io/gateway-api-inference-extension/pkg/common/error"
-	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/common/observability/logging"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/plugin"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	errcommon "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/error"
+	logutil "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/observability/logging"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
 
 	inferencev1alpha1 "github.com/opendatahub-io/ai-gateway-payload-processing/api/inference/v1alpha1"
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/controller/legacymigration"
@@ -46,10 +46,10 @@ const (
 	ModelProviderResolverPluginType = "model-provider-resolver"
 )
 
-var _ framework.RequestProcessor = &ModelProviderResolverPlugin{}
+var _ requesthandling.RequestProcessor = &ModelProviderResolverPlugin{}
 
 // ModelProviderResolverFactory defines the factory function for ModelProviderResolverPlugin.
-func ModelProviderResolverFactory(name string, _ json.RawMessage, handle framework.Handle) (framework.BBRPlugin, error) {
+func ModelProviderResolverFactory(name string, _ json.RawMessage, handle plugin.Handle) (plugin.Plugin, error) {
 	plugin, err := NewModelProviderResolver(handle.ReconcilerBuilder, handle.Client())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create plugin '%s' - %w", ModelProviderResolverPluginType, err)
@@ -137,7 +137,7 @@ func (p *ModelProviderResolverPlugin) WithName(name string) *ModelProviderResolv
 // ProcessRequest reads the model name from the request body, resolves the provider
 // from the store (populated by ExternalModel reconciler), and writes model, provider
 // and credential reference info to CycleState.
-func (p *ModelProviderResolverPlugin) ProcessRequest(ctx context.Context, cycleState *framework.CycleState, request *framework.InferenceRequest) error {
+func (p *ModelProviderResolverPlugin) ProcessRequest(ctx context.Context, cycleState *plugin.CycleState, request *requesthandling.InferenceRequest) error {
 	logger := log.FromContext(ctx).V(logutil.DEFAULT)
 
 	model, ok := request.Body["model"].(string)

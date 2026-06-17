@@ -24,10 +24,10 @@ import (
 	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
-	errcommon "sigs.k8s.io/gateway-api-inference-extension/pkg/common/error"
-	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/common/observability/logging"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/plugin"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	errcommon "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/error"
+	logutil "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/observability/logging"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
 
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/api-translation/translator"
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/api-translation/translator/anthropic"
@@ -45,8 +45,8 @@ const (
 )
 
 // compile-time type validation
-var _ framework.RequestProcessor = &APITranslationPlugin{}
-var _ framework.ResponseProcessor = &APITranslationPlugin{}
+var _ requesthandling.RequestProcessor = &APITranslationPlugin{}
+var _ requesthandling.ResponseProcessor = &APITranslationPlugin{}
 
 // apiTranslationConfig holds configuration for provider-specific translators.
 type apiTranslationConfig struct {
@@ -60,7 +60,7 @@ type vertexOpenAIConfig struct {
 }
 
 // APITranslationFactory defines the factory function for APITranslationPlugin.
-func APITranslationFactory(name string, rawConfig json.RawMessage, handle framework.Handle) (framework.BBRPlugin, error) {
+func APITranslationFactory(name string, rawConfig json.RawMessage, handle plugin.Handle) (plugin.Plugin, error) {
 	var config apiTranslationConfig
 	if len(rawConfig) > 0 {
 		if err := json.Unmarshal(rawConfig, &config); err != nil {
@@ -138,10 +138,10 @@ func (p *APITranslationPlugin) WithName(name string) *APITranslationPlugin {
 // the request body from OpenAI format to the provider's native format if needed.
 // When the incoming client format matches the upstream API format (passthrough mode),
 // translation is skipped entirely.
-func (p *APITranslationPlugin) ProcessRequest(ctx context.Context, cycleState *framework.CycleState, request *framework.InferenceRequest) error {
+func (p *APITranslationPlugin) ProcessRequest(ctx context.Context, cycleState *plugin.CycleState, request *requesthandling.InferenceRequest) error {
 	logger := log.FromContext(ctx).V(logutil.DEFAULT)
 
-	providerName, err := framework.ReadCycleStateKey[string](cycleState, state.ProviderKey) // err if not found
+	providerName, err := plugin.ReadCycleStateKey[string](cycleState, state.ProviderKey) // err if not found
 	if err != nil || providerName == "" {                                                   // empty provider means no translation needed
 		return nil
 	}
@@ -193,10 +193,10 @@ func (p *APITranslationPlugin) ProcessRequest(ctx context.Context, cycleState *f
 // ProcessResponse reads the provider from CycleState and translates the response
 // back to OpenAI Chat Completions format if needed.
 // When in passthrough mode, translation is skipped.
-func (p *APITranslationPlugin) ProcessResponse(ctx context.Context, cycleState *framework.CycleState, response *framework.InferenceResponse) error {
+func (p *APITranslationPlugin) ProcessResponse(ctx context.Context, cycleState *plugin.CycleState, response *requesthandling.InferenceResponse) error {
 	logger := log.FromContext(ctx).V(logutil.DEFAULT)
 
-	providerName, err := framework.ReadCycleStateKey[string](cycleState, state.ProviderKey) // err if not found
+	providerName, err := plugin.ReadCycleStateKey[string](cycleState, state.ProviderKey) // err if not found
 	if err != nil || providerName == "" {                                                   // empty provider means no translation needed
 		return nil
 	}
@@ -212,7 +212,7 @@ func (p *APITranslationPlugin) ProcessResponse(ctx context.Context, cycleState *
 		return fmt.Errorf("unsupported provider - '%s'", providerName)
 	}
 
-	model, _ := framework.ReadCycleStateKey[string](cycleState, state.ModelKey)
+	model, _ := plugin.ReadCycleStateKey[string](cycleState, state.ModelKey)
 
 	translatedBody, err := translator.TranslateResponse(response.Body, model)
 	if err != nil {
@@ -244,9 +244,9 @@ func (p *APITranslationPlugin) ProcessResponse(ctx context.Context, cycleState *
 // This design is intentionally generic: adding support for new API formats
 // (embeddings, audio, images) requires only adding a path mapping in
 // detectInputAPIFormat — no changes needed here.
-func isPassthrough(cycleState *framework.CycleState) bool {
-	inputFormat, _ := framework.ReadCycleStateKey[apiformat.APIFormat](cycleState, state.InputAPIFormatKey)
-	outputFormat, _ := framework.ReadCycleStateKey[apiformat.APIFormat](cycleState, state.APIFormatKey)
+func isPassthrough(cycleState *plugin.CycleState) bool {
+	inputFormat, _ := plugin.ReadCycleStateKey[apiformat.APIFormat](cycleState, state.InputAPIFormatKey)
+	outputFormat, _ := plugin.ReadCycleStateKey[apiformat.APIFormat](cycleState, state.APIFormatKey)
 	if inputFormat == "" || outputFormat == "" {
 		return false
 	}

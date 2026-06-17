@@ -23,9 +23,9 @@ import (
 	"sort"
 	"strings"
 
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
-	errcommon "sigs.k8s.io/gateway-api-inference-extension/pkg/common/error"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/plugin"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	errcommon "github.com/llm-d/llm-d-inference-payload-processor/pkg/common/error"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
 )
 
 const (
@@ -34,7 +34,7 @@ const (
 )
 
 // compile-time type validation
-var _ framework.RequestProcessor = &NemoRequestGuardPlugin{}
+var _ requesthandling.RequestProcessor = &NemoRequestGuardPlugin{}
 
 // NemoRequestGuardPlugin calls a NeMo Guardrails service over HTTP to check request content
 // using input rails. It implements RequestProcessor to intercept requests before forwarding.
@@ -44,7 +44,7 @@ type NemoRequestGuardPlugin struct {
 }
 
 // NemoRequestGuardFactory is the factory function for NemoRequestGuardPlugin.
-func NemoRequestGuardFactory(name string, rawParameters json.RawMessage, _ framework.Handle) (framework.BBRPlugin, error) {
+func NemoRequestGuardFactory(name string, rawParameters json.RawMessage, _ plugin.Handle) (plugin.Plugin, error) {
 	config := nemoGuardConfig{
 		TimeoutSeconds: defaultTimeoutSec,
 	}
@@ -97,7 +97,7 @@ func (p *NemoRequestGuardPlugin) WithName(name string) *NemoRequestGuardPlugin {
 // conveyed through the response body "status" field: "passed" means the request passed
 // all rails, "modified" means content was redacted (currently passed through as-is),
 // and "blocked" means the request is blocked.
-func (p *NemoRequestGuardPlugin) ProcessRequest(ctx context.Context, _ *framework.CycleState, request *framework.InferenceRequest) error {
+func (p *NemoRequestGuardPlugin) ProcessRequest(ctx context.Context, _ *plugin.CycleState, request *requesthandling.InferenceRequest) error {
 	model, ok := request.Body["model"].(string)
 	if !ok {
 		model = ""

@@ -22,7 +22,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/bbr/framework"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
 
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/common/apiformat"
 	"github.com/opendatahub-io/ai-gateway-payload-processing/pkg/plugins/common/auth"
@@ -54,40 +55,40 @@ func TestProcessRequest_ModelResolved(t *testing.T) {
 		}}},
 	)
 
-	plugin := &ModelProviderResolverPlugin{store: store}
-	cs := framework.NewCycleState()
-	req := framework.NewInferenceRequest()
+	p := &ModelProviderResolverPlugin{store: store}
+	cs := plugin.NewCycleState()
+	req := requesthandling.NewInferenceRequest()
 	req.Headers[":path"] = "/" + extNS + "/" + extName + "/v1/chat/completions"
 	req.Body["model"] = extName
 
-	err := plugin.ProcessRequest(context.Background(), cs, req)
+	err := p.ProcessRequest(context.Background(), cs, req)
 	require.NoError(t, err)
 
-	actualModel, err := framework.ReadCycleStateKey[string](cs, state.ModelKey)
+	actualModel, err := plugin.ReadCycleStateKey[string](cs, state.ModelKey)
 	require.NoError(t, err)
 	require.Equal(t, targetModel, actualModel)
 
-	actualProvider, err := framework.ReadCycleStateKey[string](cs, state.ProviderKey)
+	actualProvider, err := plugin.ReadCycleStateKey[string](cs, state.ProviderKey)
 	require.NoError(t, err)
 	require.Equal(t, provider.Anthropic, actualProvider)
 
-	actualCredsName, err := framework.ReadCycleStateKey[string](cs, state.CredsRefName)
+	actualCredsName, err := plugin.ReadCycleStateKey[string](cs, state.CredsRefName)
 	require.NoError(t, err)
 	require.Equal(t, credName, actualCredsName)
 
-	actualCredsNamespace, err := framework.ReadCycleStateKey[string](cs, state.CredsRefNamespace)
+	actualCredsNamespace, err := plugin.ReadCycleStateKey[string](cs, state.CredsRefNamespace)
 	require.NoError(t, err)
 	require.Equal(t, extNS, actualCredsNamespace)
 
-	actualAPIFormat, err := framework.ReadCycleStateKey[apiformat.APIFormat](cs, state.APIFormatKey)
+	actualAPIFormat, err := plugin.ReadCycleStateKey[apiformat.APIFormat](cs, state.APIFormatKey)
 	require.NoError(t, err)
 	require.Equal(t, apiformat.Messages, actualAPIFormat)
 
-	actualAuthType, err := framework.ReadCycleStateKey[auth.Auth](cs, state.AuthTypeKey)
+	actualAuthType, err := plugin.ReadCycleStateKey[auth.Auth](cs, state.AuthTypeKey)
 	require.NoError(t, err)
 	require.Equal(t, auth.Simple, actualAuthType)
 
-	actualEndpoint, err := framework.ReadCycleStateKey[string](cs, state.EndpointKey)
+	actualEndpoint, err := plugin.ReadCycleStateKey[string](cs, state.EndpointKey)
 	require.NoError(t, err)
 	require.Equal(t, endpoint, actualEndpoint)
 }
@@ -104,8 +105,8 @@ func TestProcessRequest_ModelMismatch(t *testing.T) {
 		}}},
 	)
 	p := &ModelProviderResolverPlugin{store: store}
-	cs := framework.NewCycleState()
-	req := framework.NewInferenceRequest()
+	cs := plugin.NewCycleState()
+	req := requesthandling.NewInferenceRequest()
 	req.Headers[":path"] = "/llm/gpt4/v1/chat/completions"
 	req.Body["model"] = "wrong-name"
 
@@ -116,29 +117,29 @@ func TestProcessRequest_ModelMismatch(t *testing.T) {
 func TestProcessRequest_ModelNotFound(t *testing.T) {
 	store := newInfoStore()
 	p := &ModelProviderResolverPlugin{store: store}
-	cs := framework.NewCycleState()
-	req := framework.NewInferenceRequest()
+	cs := plugin.NewCycleState()
+	req := requesthandling.NewInferenceRequest()
 	req.Headers[":path"] = "/model-ns/model-name/v1/chat/completions"
 	req.Body["model"] = "unknown-model"
 
 	err := p.ProcessRequest(context.Background(), cs, req)
 	require.NoError(t, err)
 
-	_, err = framework.ReadCycleStateKey[string](cs, state.ProviderKey)
+	_, err = plugin.ReadCycleStateKey[string](cs, state.ProviderKey)
 	require.Error(t, err)
 }
 
 func TestProcessRequest_NoModel(t *testing.T) {
 	store := newInfoStore()
 	p := &ModelProviderResolverPlugin{store: store}
-	cs := framework.NewCycleState()
+	cs := plugin.NewCycleState()
 
-	err := p.ProcessRequest(context.Background(), cs, framework.NewInferenceRequest())
+	err := p.ProcessRequest(context.Background(), cs, requesthandling.NewInferenceRequest())
 	require.NoError(t, err)
 
-	_, err = framework.ReadCycleStateKey[string](cs, state.ProviderKey)
+	_, err = plugin.ReadCycleStateKey[string](cs, state.ProviderKey)
 	require.Error(t, err)
-	_, err = framework.ReadCycleStateKey[string](cs, state.ModelKey)
+	_, err = plugin.ReadCycleStateKey[string](cs, state.ModelKey)
 	require.Error(t, err)
 }
 
@@ -153,15 +154,15 @@ func TestProcessRequest_BadPath(t *testing.T) {
 		}}},
 	)
 	p := &ModelProviderResolverPlugin{store: store}
-	cs := framework.NewCycleState()
-	req := framework.NewInferenceRequest()
+	cs := plugin.NewCycleState()
+	req := requesthandling.NewInferenceRequest()
 	req.Headers[":path"] = "/incomplete"
 	req.Body["model"] = "gpt-4o"
 
 	err := p.ProcessRequest(context.Background(), cs, req)
 	require.NoError(t, err)
 
-	_, err = framework.ReadCycleStateKey[string](cs, state.ProviderKey)
+	_, err = plugin.ReadCycleStateKey[string](cs, state.ProviderKey)
 	require.Error(t, err)
 }
 
@@ -219,19 +220,19 @@ func TestProcessRequest_AnthropicMessages(t *testing.T) {
 	)
 
 	p := &ModelProviderResolverPlugin{store: store}
-	cs := framework.NewCycleState()
-	req := framework.NewInferenceRequest()
+	cs := plugin.NewCycleState()
+	req := requesthandling.NewInferenceRequest()
 	req.Headers[":path"] = "/llm/claude/v1/messages"
 	req.Body["model"] = "claude"
 
 	err := p.ProcessRequest(context.Background(), cs, req)
 	require.NoError(t, err)
 
-	inputFmt, err := framework.ReadCycleStateKey[apiformat.APIFormat](cs, state.InputAPIFormatKey)
+	inputFmt, err := plugin.ReadCycleStateKey[apiformat.APIFormat](cs, state.InputAPIFormatKey)
 	require.NoError(t, err)
 	require.Equal(t, apiformat.Messages, inputFmt)
 
-	apiFormat, err := framework.ReadCycleStateKey[apiformat.APIFormat](cs, state.APIFormatKey)
+	apiFormat, err := plugin.ReadCycleStateKey[apiformat.APIFormat](cs, state.APIFormatKey)
 	require.NoError(t, err)
 	require.Equal(t, apiformat.Messages, apiFormat)
 }
@@ -248,15 +249,15 @@ func TestProcessRequest_OpenAIResponses(t *testing.T) {
 	)
 
 	p := &ModelProviderResolverPlugin{store: store}
-	cs := framework.NewCycleState()
-	req := framework.NewInferenceRequest()
+	cs := plugin.NewCycleState()
+	req := requesthandling.NewInferenceRequest()
 	req.Headers[":path"] = "/llm/gpt/v1/responses"
 	req.Body["model"] = "gpt"
 
 	err := p.ProcessRequest(context.Background(), cs, req)
 	require.NoError(t, err)
 
-	inputFmt, err := framework.ReadCycleStateKey[apiformat.APIFormat](cs, state.InputAPIFormatKey)
+	inputFmt, err := plugin.ReadCycleStateKey[apiformat.APIFormat](cs, state.InputAPIFormatKey)
 	require.NoError(t, err)
 	require.Equal(t, apiformat.OpenAIResponses, inputFmt)
 }
@@ -273,8 +274,8 @@ func TestProcessRequest_UnsupportedPath(t *testing.T) {
 	)
 
 	p := &ModelProviderResolverPlugin{store: store}
-	cs := framework.NewCycleState()
-	req := framework.NewInferenceRequest()
+	cs := plugin.NewCycleState()
+	req := requesthandling.NewInferenceRequest()
 	req.Headers[":path"] = "/llm/model/v1/unknown"
 	req.Body["model"] = "model"
 
